@@ -1,6 +1,8 @@
 import esbuild from "esbuild";
 import process from "process";
 import builtins from "builtin-modules";
+import fs from "fs/promises";
+import path from "path";
 
 const banner =
 `/*
@@ -10,6 +12,38 @@ if you want to view the source, please visit the github repository of this plugi
 `;
 
 const prod = (process.argv[2] === "production");
+
+const copyOnEndPlugin = () => ({
+	name: "copy-on-end",
+	setup(build) {
+		build.onEnd(async () => {
+			if (prod) return;
+			try {
+				const vaultDir = "test-vault";
+				const manifestRaw = await fs.readFile("manifest.json", "utf8");
+				const manifest = JSON.parse(manifestRaw);
+				const pluginId = manifest.id || "cursor-goaway";
+				const targetDir = path.join(vaultDir, ".obsidian", "plugins", pluginId);
+
+				await fs.mkdir(targetDir, { recursive: true });
+				const filesToCopy = ["main.js", "manifest.json", "styles.css"];
+				await Promise.all(filesToCopy.map(async (fileName) => {
+					try {
+						await fs.copyFile(path.join(process.cwd(), fileName), path.join(targetDir, fileName));
+					} catch (err) {
+						// 忽略不存在的样式文件等
+					}
+				}));
+				const now = new Date();
+				const pad = (n) => n.toString().padStart(2, '0');
+				const timeStr = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+				console.log(`(${timeStr}) [copy-on-end] 已复制到 ${targetDir} `);
+			} catch (error) {
+				console.error("[copy-on-end] Copy failed:", error);
+			}
+		});
+	}
+});
 
 const context = await esbuild.context({
 	banner: {
@@ -38,6 +72,7 @@ const context = await esbuild.context({
 	sourcemap: prod ? false : "inline",
 	treeShaking: true,
 	outfile: "main.js",
+	plugins: [copyOnEndPlugin()],
 });
 
 if (prod) {
