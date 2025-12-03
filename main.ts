@@ -2,6 +2,7 @@ import { Plugin, Editor } from 'obsidian';
 
 export default class CursorGoaway extends Plugin {
 	private currentKeydownHandler?: (e: KeyboardEvent) => void;
+	
 	async onload() {
 		this.registerEvent(
 			this.app.workspace.on('file-open', (file) => {
@@ -26,7 +27,6 @@ export default class CursorGoaway extends Plugin {
 					startTime = performance.now();
 					isBlurring = true;
 					requestAnimationFrame(blurEditor);
-
 					
 					const onKeyDown = (e: KeyboardEvent) => {
 						if (e.key !== 'ArrowDown') return;
@@ -35,8 +35,29 @@ export default class CursorGoaway extends Plugin {
 						if (activeFile?.path !== file.path) return this.cleanupKeydownHandler();
 						// Ignore ArrowDown while blur cycle is active
 						if (isBlurring) return;
-						e.preventDefault();
+						
+						// Check if editor already has focus (user is already editing)
 						const editor = this.app.workspace.activeEditor?.editor as Editor | undefined;
+						if (editor) {
+							// Try to access the CodeMirror instance to check focus state
+							// @ts-ignore - accessing internal cm property
+							const cm = editor.cm;
+							if (cm && cm.hasFocus && cm.hasFocus()) {
+								// Editor already has focus, don't jump to top
+								return this.cleanupKeydownHandler();
+							}
+						}
+						
+						// Fallback: check if activeElement is within the editor container
+						const activeElement = document.activeElement;
+						const editorContainer = activeElement?.closest('.cm-editor, .cm-content, .markdown-source-view');
+						if (editorContainer) {
+							// Editor already focused, don't jump to top
+							return this.cleanupKeydownHandler();
+						}
+						
+						// Editor not focused yet, jump to top and focus
+						e.preventDefault();
 						if (editor) {
 							try { editor.focus(); } catch (err) { console.debug('focus() failed', err); }
 							editor.setCursor(0, 0);
